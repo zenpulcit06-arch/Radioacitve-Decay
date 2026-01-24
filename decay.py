@@ -51,3 +51,74 @@ class RadioactiveDecay:
     
     def half_life(self):
         return np.log(2)/self.K
+    
+    def simulate_monte_carlo(self,total_time=1000,dt=0.1,n_particle = 100000):
+        steps = int(total_time/dt)
+        
+        t = np.zeros(steps)
+        survivors = np.zeros(steps)
+
+        alive = np.ones(n_particle,dtype=bool)
+        survivors[0] = n_particle
+
+        decay_prob = self.K*dt
+
+        if decay_prob > 0.1:
+            raise ValueError("Choose smaller dt: λ·dt must be ≪ 1 for Monte Carlo")
+
+        for i in range(steps-1):
+            random_numbers = np.random.rand(n_particle)
+            decayed = (random_numbers < decay_prob) & alive
+            alive[decayed] = False
+
+            survivors[i+1] = np.sum(alive)
+            t[i+1] = t[i] + dt
+
+        return t , survivors
+    
+    def plot_monte_carlo(self,total_time=1000,dt=0.1,n_particle = 100000):
+        t_mc , survivors = self.simulate_monte_carlo(total_time=total_time,dt=dt,n_particle = n_particle)
+
+        analytical = n_particle*np.exp(-self.K*t_mc)
+
+        plt.plot(t_mc,survivors,label ="Monte carlo",alpha = 0.7)
+        plt.plot(t_mc,analytical,label='Analytical')
+        plt.xlabel("Time")
+        plt.ylabel("Number of Nuclei")
+        plt.title("Monte Carlo Radioactive Decay")
+        plt.legend()
+        plt.grid(True)
+        plt.show()
+
+
+if __name__ == "__main__":
+    # 1. Setup Parameters
+    # Let's use a decay constant (K) of 0.693, which makes the half-life exactly 1.0 seconds.
+    initial_conc = 100.0
+    decay_constant = 0.693
+    
+    # 2. Initialize the class
+    decay_sim = RadioactiveDecay(initial_concentration=initial_conc, decay_const=decay_constant)
+    
+    # 3. Test Half-Life calculation
+    print(f"--- Radioactive Decay Simulation ---")
+    print(f"Initial Concentration: {initial_conc}")
+    print(f"Decay Constant (K): {decay_constant}")
+    print(f"Calculated Half-Life: {decay_sim.half_life():.3f} seconds")
+    print("-" * 40)
+
+    # 4. Test Numerical Simulation and Save Data
+    print("Running Numerical Simulation and saving to 'Radioactive.csv'...")
+    df = decay_sim.save_data("Radioactive.csv")
+    print(f"First 5 rows of data:\n{df.head()}")
+    
+    # 5. Plot the Numerical Comparison (Forward Euler vs Analytical)
+    print("\nDisplaying Numerical Plot...")
+    decay_sim.plot()
+
+    # 6. Test Monte Carlo Simulation
+    # We use a smaller total_time and n_particle so it runs quickly
+    print("Running Monte Carlo Simulation (10,000 particles)...")
+    decay_sim.plot_monte_carlo(total_time=10, dt=0.05, n_particle=10000)
+    
+    print("Test Complete.")
