@@ -36,6 +36,7 @@ class RadioactiveDecay:
         plt.xlabel('Time (s)')
         plt.ylabel('Concentration')
         plt.legend()
+        plt.savefig('Concentration_vs_Time.png')
         plt.show()
 
     def save_data(self,filename="Radioactive.csv"):
@@ -88,6 +89,7 @@ class RadioactiveDecay:
         plt.title("Monte Carlo Radioactive Decay")
         plt.legend()
         plt.grid(True)
+        plt.savefig("monte_carlo_decay.png")
         plt.show()
 
 
