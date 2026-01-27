@@ -13,16 +13,18 @@ class RadioactiveDecay:
         self.A0 = initial_concentration
 
     def simulate(self,total_time = 1000,dt=0.001):
-        steps = int(total_time/dt)
+        steps = int(total_time/dt)+1
 
         t = np.zeros(steps)
         A = np.zeros(steps)
 
         A[0] = self.A0
 
+        if self.K*dt > 0.1:
+            raise ValueError("Choose smaller dt: λ·dt must be ≪ 1 for Monte Carlo")
+
         for i in range(steps-1):
             A[i+1] = A[i] - self.K*A[i]*dt
-            A[i+1] = np.maximum(A[i+1],0.0)
             t[i+1] = t[i] +dt 
 
         return A,t
@@ -41,10 +43,11 @@ class RadioactiveDecay:
 
     def save_data(self,filename="Radioactive.csv"):
         A,t = self.simulate()
+        analytical = self.A0*np.exp(-self.K*t)
 
         df = pd.DataFrame({"Time":t,
                            "Numerical":A,
-                           "Analytical":self.A0*np.exp(-self.K*t)})
+                           "Analytical":analytical})
         
         df.to_csv(filename,index=False)
 
@@ -54,7 +57,7 @@ class RadioactiveDecay:
         return np.log(2)/self.K
     
     def simulate_monte_carlo(self,total_time=1000,dt=0.1,n_particle = 100000):
-        steps = int(total_time/dt)
+        steps = int(total_time/dt + 1)
         
         t = np.zeros(steps)
         survivors = np.zeros(steps)
@@ -68,9 +71,14 @@ class RadioactiveDecay:
             raise ValueError("Choose smaller dt: λ·dt must be ≪ 1 for Monte Carlo")
 
         for i in range(steps-1):
-            random_numbers = np.random.rand(n_particle)
-            decayed = (random_numbers < decay_prob) & alive
-            alive[decayed] = False
+            alive_idx = np.where(alive)[0]
+            n_alive = alive_idx.size
+
+            random_numbers = np.random.rand(n_alive)
+
+            decayed = random_numbers < decay_prob
+
+            alive[alive_idx[decayed]] = False
 
             survivors[i+1] = np.sum(alive)
             t[i+1] = t[i] + dt
@@ -81,9 +89,11 @@ class RadioactiveDecay:
         t_mc , survivors = self.simulate_monte_carlo(total_time=total_time,dt=dt,n_particle = n_particle)
 
         analytical = n_particle*np.exp(-self.K*t_mc)
-
+        errors = np.sqrt(survivors)
+        
         plt.plot(t_mc,survivors,label ="Monte carlo",alpha = 0.7)
         plt.plot(t_mc,analytical,label='Analytical')
+        plt.errorbar(t_mc,survivors,yerr=errors,fmt='.',alpha = 0.3,label ='Monte Carlo ±√N')
         plt.xlabel("Time")
         plt.ylabel("Number of Nuclei")
         plt.title("Monte Carlo Radioactive Decay")
@@ -91,6 +101,20 @@ class RadioactiveDecay:
         plt.grid(True)
         plt.savefig("monte_carlo_decay.png")
         plt.show()
+
+
+    def estimate_decay_const(self,t,survivors):
+        mask = survivors>0
+        t_fit = t[mask]
+        N_fit = survivors[mask]
+
+        log_N = np.log(N_fit)
+
+        slope, intercept = np.polyfit(t_fit,log_N,1)
+        lambda_est = -slope
+
+        return lambda_est
+
 
 
 if __name__ == "__main__":
@@ -124,3 +148,15 @@ if __name__ == "__main__":
     decay_sim.plot_monte_carlo(total_time=10, dt=0.05, n_particle=10000)
     
     print("Test Complete.")
+
+
+    t_mc, survivors = decay_sim.simulate_monte_carlo(
+
+    total_time=10,
+    dt=0.05,
+    n_particle=10000)
+
+    lambda_est = decay_sim.estimate_decay_const(t_mc, survivors)
+
+    print(f"True decay constant: {decay_constant}")
+    print(f"Estimated decay constant (Monte Carlo): {lambda_est:.4f}")
