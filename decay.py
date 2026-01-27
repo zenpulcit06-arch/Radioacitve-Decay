@@ -114,49 +114,77 @@ class RadioactiveDecay:
         lambda_est = -slope
 
         return lambda_est
+    
+
+class Detector:
+    def __init__(self,t,survivors,efiiciency = 0.6,background_rate=2.0):
+        self.t = t
+        self.sv = survivors
+        self.ef = efiiciency
+        self.br = background_rate
+        self.t_mid = None
+        self.measured = None
+        self.error = None
 
 
+    def detector_response(self):
+        true_decay = np.maximum( self.sv[:-1] - self.sv[1:],0).astype(int)
+
+        detected = np.random.binomial(true_decay,self.ef)
+
+        background = np.random.poisson(lam=self.br,size=detected.size)
+
+        self.measured = detected + background
+
+        self.error = np.sqrt(self.measured)
+
+        self.t_mid = (self.t[:-1] + self.t[1:])*0.5
+
+    
+    def plot_detector_data(self):
+        plt.errorbar(self.t_mid,self.measured,yerr=self.error,
+                     fmt='o',capsize=3,label = 'Detector Data')
+        plt.xlabel("Time (s)")
+        plt.ylabel("Counts")
+        plt.legend()
+        plt.grid(True)
+        plt.show()
 
 if __name__ == "__main__":
     # 1. Setup Parameters
-    # Let's use a decay constant (K) of 0.693, which makes the half-life exactly 1.0 seconds.
-    initial_conc = 100.0
-    decay_constant = 0.693
+    INITIAL_CONC = 1.0     # For numerical method
+    DECAY_CONSTANT = 0.05  # Lambda
+    TOTAL_TIME = 100       # Duration of simulation
+    N_PARTICLES = 10000    # For Monte Carlo
     
-    # 2. Initialize the class
-    decay_sim = RadioactiveDecay(initial_concentration=initial_conc, decay_const=decay_constant)
+    print(f"--- Starting Radioactive Decay Simulation ---")
+    print(f"True Decay Constant (λ): {DECAY_CONSTANT}")
     
-    # 3. Test Half-Life calculation
-    print(f"--- Radioactive Decay Simulation ---")
-    print(f"Initial Concentration: {initial_conc}")
-    print(f"Decay Constant (K): {decay_constant}")
-    print(f"Calculated Half-Life: {decay_sim.half_life():.3f} seconds")
-    print("-" * 40)
-
-    # 4. Test Numerical Simulation and Save Data
-    print("Running Numerical Simulation and saving to 'Radioactive.csv'...")
-    df = decay_sim.save_data("Radioactive.csv")
-    print(f"First 5 rows of data:\n{df.head()}")
+    # 2. Initialize the RadioactiveDecay model
+    decay_model = RadioactiveDecay(initial_concentration=INITIAL_CONC, decay_const=DECAY_CONSTANT)
     
-    # 5. Plot the Numerical Comparison (Forward Euler vs Analytical)
-    print("\nDisplaying Numerical Plot...")
-    decay_sim.plot()
-
-    # 6. Test Monte Carlo Simulation
-    # We use a smaller total_time and n_particle so it runs quickly
-    print("Running Monte Carlo Simulation (10,000 particles)...")
-    decay_sim.plot_monte_carlo(total_time=10, dt=0.05, n_particle=10000)
+    # 3. Test Numerical & Analytical Plotting
+    # This will save 'Concentration_vs_Time.png'
+    print("\n[1/4] Running Numerical/Analytical comparison...")
+    decay_model.plot()
     
-    print("Test Complete.")
-
-
-    t_mc, survivors = decay_sim.simulate_monte_carlo(
-
-    total_time=10,
-    dt=0.05,
-    n_particle=10000)
-
-    lambda_est = decay_sim.estimate_decay_const(t_mc, survivors)
-
-    print(f"True decay constant: {decay_constant}")
-    print(f"Estimated decay constant (Monte Carlo): {lambda_est:.4f}")
+    # 4. Test Monte Carlo Simulation
+    # This will save 'monte_carlo_decay.png'
+    print("[2/4] Running Monte Carlo Simulation...")
+    decay_model.plot_monte_carlo(total_time=TOTAL_TIME, dt=0.5, n_particle=N_PARTICLES)
+    
+    # 5. Test Parameter Estimation
+    # Let's see if the slope of the log-plot matches our lambda
+    t_mc, survivors = decay_model.simulate_monte_carlo(total_time=TOTAL_TIME, dt=0.5, n_particle=N_PARTICLES)
+    est_lambda = decay_model.estimate_decay_const(t_mc, survivors)
+    print(f"[3/4] Estimated λ from Monte Carlo: {est_lambda:.4f}")
+    print(f"      Error: {abs(DECAY_CONSTANT - est_lambda):.4f}")
+    
+    # 6. Test Detector Class
+    print("[4/4] Simulating Detector Response...")
+    # Higher background rate and lower efficiency for a realistic challenge
+    detector = Detector(t_mc, survivors, efiiciency=0.4, background_rate=5.0)
+    detector.detector_response()
+    detector.plot_detector_data()
+    
+    print("\n--- Simulation Complete ---")
