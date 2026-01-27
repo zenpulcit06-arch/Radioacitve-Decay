@@ -150,41 +150,114 @@ class Detector:
         plt.grid(True)
         plt.show()
 
+    def decay_const_detector(self):
+
+        signal = self.measured - self.br
+        signal = np.maximum(signal,1)
+        corrected = signal/self.ef
+
+        log_y = np.log(corrected)
+        log_err = self.error/signal
+
+        weights = 1/log_err**2
+
+        slope , intercept = np.polyfit(
+            self.t_mid,
+            log_y,
+            1,
+            w=weights
+        )
+
+        lambda_fit = -slope
+
+        cov = np.polyfit(
+            self.t_mid,
+            log_y,
+            1,
+            w=weights,
+            cov=True
+        )[1]
+
+        lambda_error = np.sqrt(cov[0,0])
+
+        plt.errorbar(
+        self.t_mid,
+        log_y,
+        yerr=log_err,
+        fmt='o',
+        label="Detector data"
+        )
+
+        plt.plot(
+        self.t_mid,
+        intercept + slope * self.t_mid,
+        label="Fit"
+        )
+
+        plt.xlabel("Time (s)")
+        plt.ylabel("ln(Counts)")
+        plt.legend()
+        plt.grid()
+        plt.show()
+
+        return lambda_fit , lambda_error
+
+
+
 if __name__ == "__main__":
     # 1. Setup Parameters
-    INITIAL_CONC = 1.0     # For numerical method
-    DECAY_CONSTANT = 0.05  # Lambda
-    TOTAL_TIME = 100       # Duration of simulation
-    N_PARTICLES = 10000    # For Monte Carlo
+    A0 = 50000          # Initial concentration/particles
+    decay_constant = 0.05  # lambda (s^-1)
+    total_time = 100    # Total duration of experiment
     
-    print(f"--- Starting Radioactive Decay Simulation ---")
-    print(f"True Decay Constant (λ): {DECAY_CONSTANT}")
+    print(f"--- Radioactive Decay Simulation ---")
+    print(f"True Lambda: {decay_constant}")
     
-    # 2. Initialize the RadioactiveDecay model
-    decay_model = RadioactiveDecay(initial_concentration=INITIAL_CONC, decay_const=DECAY_CONSTANT)
+    # 2. Instantiate and run Numerical/Analytical Comparison
+    decay_sim = RadioactiveDecay(initial_concentration=A0, decay_const=decay_constant)
+    print(f"Calculated Half-life: {decay_sim.half_life():.2f} s")
     
-    # 3. Test Numerical & Analytical Plotting
-    # This will save 'Concentration_vs_Time.png'
-    print("\n[1/4] Running Numerical/Analytical comparison...")
-    decay_model.plot()
+    # Run standard numerical plot
+    # decay_sim.plot() 
     
-    # 4. Test Monte Carlo Simulation
-    # This will save 'monte_carlo_decay.png'
-    print("[2/4] Running Monte Carlo Simulation...")
-    decay_model.plot_monte_carlo(total_time=TOTAL_TIME, dt=0.5, n_particle=N_PARTICLES)
+    # 3. Monte Carlo Simulation
+    print("\nRunning Monte Carlo simulation...")
+    t_mc, survivors_mc = decay_sim.simulate_monte_carlo(
+        total_time=total_time, 
+        dt=0.5, 
+        n_particle=A0
+    )
+    decay_sim.plot_monte_carlo(total_time=total_time, dt=0.5, n_particle=A0)
     
-    # 5. Test Parameter Estimation
-    # Let's see if the slope of the log-plot matches our lambda
-    t_mc, survivors = decay_model.simulate_monte_carlo(total_time=TOTAL_TIME, dt=0.5, n_particle=N_PARTICLES)
-    est_lambda = decay_model.estimate_decay_const(t_mc, survivors)
-    print(f"[3/4] Estimated λ from Monte Carlo: {est_lambda:.4f}")
-    print(f"      Error: {abs(DECAY_CONSTANT - est_lambda):.4f}")
-    
-    # 6. Test Detector Class
-    print("[4/4] Simulating Detector Response...")
-    # Higher background rate and lower efficiency for a realistic challenge
-    detector = Detector(t_mc, survivors, efiiciency=0.4, background_rate=5.0)
+    # Estimate lambda from raw MC data
+    est_lambda = decay_sim.estimate_decay_const(t_mc, survivors_mc)
+    print(f"Estimated Lambda (Raw MC): {est_lambda:.4f}")
+
+    # 4. Detector Simulation (Adding Noise and Efficiency)
+    print("\nSimulating Detector response...")
+    detector = Detector(
+        t=t_mc, 
+        survivors=survivors_mc, 
+        efiiciency=0.7, 
+        background_rate=5.0
+    )
     detector.detector_response()
+    
+    # Plot detected counts over time
     detector.plot_detector_data()
     
-    print("\n--- Simulation Complete ---")
+    # 5. Regression / Curve Fitting
+    print("\nFitting Detector Data to recover Lambda...")
+    fit_lambda, fit_error = detector.decay_const_detector()
+    
+    print(f"\n--- Results ---")
+    print(f"True Lambda:      {decay_constant:.4f}")
+    print(f"Recovered Lambda: {fit_lambda:.4f} ± {fit_error:.4f}")
+    
+    # Check if the result is within 2 sigma
+    z_score = abs(fit_lambda - decay_constant) / fit_error
+    print(f"Z-score: {z_score:.2f}")
+    if z_score < 2:
+        print("Success: Recovered lambda is consistent with the true value.")
+    else:
+        print("Warning: Fit deviates significantly from true value.")
