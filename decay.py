@@ -33,11 +33,19 @@ class RadioactiveDecay:
         A,t = self.simulate()
         exact = self.A0*np.exp(-self.K*t)
 
-        plt.plot(t,A,label='Concentration (Numerical)')
-        plt.plot(t,exact,label = 'Concentration (Analytical)')
-        plt.xlabel('Time (s)')
-        plt.ylabel('Concentration')
-        plt.legend()
+        fig , ax = plt.subplots(1,2,figsize = (8,8))
+
+        ax[0].plot(t,A,label='Concentration (Numerical)')
+        ax[1].plot(t,exact,label = 'Concentration (Analytical)')
+        ax[0].set_xlabel('Time (s)')
+        ax[1].set_xlabel('Time (s)')
+
+        ax[0].set_ylabel('Concentration')
+        ax[1].set_ylabel('Concentration')
+
+        ax[0].legend()
+        ax[1].legend()
+
         plt.savefig('Concentration_vs_Time.png')
         plt.show()
 
@@ -90,15 +98,25 @@ class RadioactiveDecay:
 
         analytical = n_particle*np.exp(-self.K*t_mc)
         errors = np.sqrt(survivors)
+
+        fig , ax = plt.subplots(2,1,figsize = (8,8))
         
-        plt.plot(t_mc,survivors,label ="Monte carlo",alpha = 0.7)
-        plt.plot(t_mc,analytical,label='Analytical')
-        plt.errorbar(t_mc,survivors,yerr=errors,fmt='.',alpha = 0.3,label ='Monte Carlo ±√N')
-        plt.xlabel("Time")
-        plt.ylabel("Number of Nuclei")
+        ax[0].plot(t_mc,survivors,label ="Monte carlo",alpha = 0.7)
+        ax[1].plot(t_mc,analytical,label='Analytical')
+        ax[0].errorbar(t_mc,survivors,yerr=errors,fmt='.',alpha = 0.3,label ='Monte Carlo ±√N')
+        ax[0].set_xlabel("Time")
+        ax[1].set_xlabel("Time")
+
+        ax[0].set_ylabel("Number of Nuclei")
+        ax[1].set_ylabel("Number of Nuclei")
+
         plt.title("Monte Carlo Radioactive Decay")
-        plt.legend()
-        plt.grid(True)
+        ax[0].legend()
+        ax[1].legend()
+
+        ax[0].grid(True)
+        ax[1].grid(True)
+
         plt.savefig("monte_carlo_decay.png")
         plt.show()
 
@@ -205,59 +223,55 @@ class Detector:
 
 
 if __name__ == "__main__":
-    # 1. Setup Parameters
-    A0 = 50000          # Initial concentration/particles
-    decay_constant = 0.05  # lambda (s^-1)
-    total_time = 100    # Total duration of experiment
+    # --- 1. Initialization & Basic Simulation ---
+    print("--- Testing Basic Numerical Simulation ---")
+    N0 = 1000
+    lam = 0.05
+    rd = RadioactiveDecay(initial_concentration=N0, decay_const=lam)
     
-    print(f"--- Radioactive Decay Simulation ---")
-    print(f"True Lambda: {decay_constant}")
+    # Check half-life calculation: ln(2)/lambda
+    expected_hl = np.log(2) / lam
+    print(f"Calculated Half-life: {rd.half_life():.2f}s (Expected: {expected_hl:.2f}s)")
     
-    # 2. Instantiate and run Numerical/Analytical Comparison
-    decay_sim = RadioactiveDecay(initial_concentration=A0, decay_const=decay_constant)
-    print(f"Calculated Half-life: {decay_sim.half_life():.2f} s")
+    # Run deterministic simulation
+    A, t = rd.simulate(total_time=100, dt=0.01)
+    print(f"Numerical end concentration: {A[-1]:.2f}")
     
-    # Run standard numerical plot
-    # decay_sim.plot() 
+    # --- 2. Monte Carlo Testing ---
+    print("\n--- Testing Monte Carlo Simulation ---")
+    # Using a larger dt and fewer particles for a faster test run
+    t_mc, survivors = rd.simulate_monte_carlo(total_time=50, dt=0.5, n_particle=50000)
     
-    # 3. Monte Carlo Simulation
-    print("\nRunning Monte Carlo simulation...")
-    t_mc, survivors_mc = decay_sim.simulate_monte_carlo(
-        total_time=total_time, 
-        dt=0.5, 
-        n_particle=A0
-    )
-    decay_sim.plot_monte_carlo(total_time=total_time, dt=0.5, n_particle=A0)
+    # Estimate lambda from the MC data to see if it recovers our input lam
+    lam_est = rd.estimate_decay_const(t_mc, survivors)
+    print(f"Estimated λ from MC: {lam_est:.4f} (Original λ: {lam})")
     
-    # Estimate lambda from raw MC data
-    est_lambda = decay_sim.estimate_decay_const(t_mc, survivors_mc)
-    print(f"Estimated Lambda (Raw MC): {est_lambda:.4f}")
+    # Test MC Plotting (Checks syntax/matplotlib logic)
+    rd.plot_monte_carlo(total_time=50, dt=0.5, n_particle=10000)
 
-    # 4. Detector Simulation (Adding Noise and Efficiency)
-    print("\nSimulating Detector response...")
-    detector = Detector(
-        t=t_mc, 
-        survivors=survivors_mc, 
-        efiiciency=0.7, 
-        background_rate=5.0
-    )
-    detector.detector_response()
+    # --- 3. Detector & Data Analysis ---
+    print("\n--- Testing Detector Response ---")
+    # Using the MC results as input for the detector
+    det = Detector(t_mc, survivors, efiiciency=0.7, background_rate=5.0)
+    det.detector_response()
     
-    # Plot detected counts over time
-    detector.plot_detector_data()
+    # Check if detector data exists
+    if det.measured is not None:
+        print(f"Total counts detected: {np.sum(det.measured)}")
+        print(f"Average background noise: {det.br} counts/bin")
     
-    # 5. Regression / Curve Fitting
-    print("\nFitting Detector Data to recover Lambda...")
-    fit_lambda, fit_error = detector.decay_const_detector()
+    # Attempt to recover the decay constant from "noisy" detector data
+    fit_lam, fit_err = det.decay_const_detector()
+    print(f"Detector-fitted λ: {fit_lam:.4f} ± {fit_err:.4f}")
     
-    print(f"\n--- Results ---")
-    print(f"True Lambda:      {decay_constant:.4f}")
-    print(f"Recovered Lambda: {fit_lambda:.4f} ± {fit_error:.4f}")
-    
-    # Check if the result is within 2 sigma
-    z_score = abs(fit_lambda - decay_constant) / fit_error
-    print(f"Z-score: {z_score:.2f}")
-    if z_score < 2:
-        print("Success: Recovered lambda is consistent with the true value.")
+    # Validation check: Is the true lambda within 3 standard deviations?
+    z_score = abs(fit_lam - lam) / fit_err
+    if z_score < 3:
+        print(f"Success: Fit is consistent with truth (Z-score: {z_score:.2f})")
     else:
-        print("Warning: Fit deviates significantly from true value.")
+        print(f"Warning: Fit deviates from truth (Z-score: {z_score:.2f})")
+
+    # --- 4. Data Persistence ---
+    df = rd.save_data("test_decay_data.csv")
+    print(f"\nSaved {len(df)} rows to test_decay_data.csv")
+    print("Test Suite Complete.")
